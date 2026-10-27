@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>مختبر مقارنة QAOA والخوارزميات الكلاسيكية (نموذج مبسّط)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--line:#d9dee8;--text:#1b2433;--muted:#5d6b82;--in:#f4f6fa;--cy:#0891b2;--pu:#7c3aed;--gr:#059669;--am:#b45309}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0f17;--card:#111827;--line:#263145;--text:#e2e8f0;--muted:#94a3b8;--in:#0b0f17;--cy:#22d3ee;--pu:#c084fc;--gr:#34d399;--am:#fbbf24}}
+:root[data-theme="dark"]{--bg:#0b0f17;--card:#111827;--line:#263145;--text:#e2e8f0;--muted:#94a3b8;--in:#0b0f17;--cy:#22d3ee;--pu:#c084fc;--gr:#34d399;--am:#fbbf24}
+*{box-sizing:border-box}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Tajawal',system-ui,sans-serif;line-height:1.6}
+.mono{font-family:'Fira Code',ui-monospace,monospace}
+header{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--card)}
+h1{margin:0;font-size:1.2rem;font-weight:900}
+header p{margin:2px 0 0;font-size:.8rem;color:var(--muted)}
+.warn{margin:16px 20px 0;padding:10px 14px;border:1px solid var(--am);border-radius:10px;font-size:.82rem;color:var(--am)}
+main{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;padding:16px 20px;max-width:1200px;margin:auto}
+@media(min-width:1000px){main{grid-template-columns:340px minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.card h2{margin:0 0 12px;font-size:.95rem;font-weight:700}
+label{display:block;font-size:.76rem;color:var(--muted);margin:10px 0 4px}
+label b{color:var(--text)}
+select,input[type=number]{width:100%;background:var(--in);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-size:.85rem}
+input[type=range]{width:100%}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--in);color:var(--text);padding:8px 12px;font-size:.82rem}
+button.main{width:100%;margin-top:14px;background:var(--cy);color:#fff;border:0;font-weight:700;padding:11px}
+button.main:disabled{opacity:.6;cursor:wait}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.kpi span{display:block;font-size:.7rem;color:var(--muted)}
+.kpi strong{font-size:1.05rem}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:.8rem}
+.row:last-child{border:0}.row span:first-child{color:var(--muted)}
+.chartbox{height:260px;position:relative}
+.canvasbox{height:220px;position:relative;overflow:hidden;border:1px solid var(--line);border-radius:10px}
+canvas{display:block}
+.note{font-size:.72rem;color:var(--muted);margin-top:8px}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>مختبر مقارنة QAOA مقابل الخوارزميات الكلاسيكية</h1>
+  <p>مسألة Max-Cut على رسوم صغيرة: محاكاة دقيقة للحالة الكمومية + نموذج ضوضاء مبسّط + نموذج تكلفة بافتراضات قابلة للتعديل</p>
+</header>
+<div class="warn">تنبيه: هذه أداة تعليمية لنموذج مبسّط وليست قياساً على عتاد كمومي حقيقي. QAOA هنا تُحاكى كلاسيكياً (ذاكرة 2^N)، وحجم المسائل (N ≤ 10) أصغر بكثير من أي نطاق قد يظهر فيه فرق كمومي. لا تُستخلص منها نتائج عن الجدوى الفعلية.</div>
+
+<main>
+<div>
+  <div class="card">
+    <h2>1. المسألة</h2>
+    <label>نوع الرسم</label>
+    <select id="graphType">
+      <option value="erdos">Erdős–Rényi عشوائي</option>
+      <option value="3regular">3-منتظم عشوائي (N زوجي)</option>
+      <option value="ring">حلقة</option>
+      <option value="complete">رسم كامل</option>
+    </select>
+    <label>عدد الكيوبتات N: <b id="valN">8</b></label>
+    <input type="range" id="paramN" min="3" max="10" value="8">
+    <label>احتمالية الحافة (لـ Erdős–Rényi): <b id="valProb">0.6</b></label>
+    <input type="range" id="paramProb" min="0.2" max="1" step="0.1" value="0.6">
+    <label>البذرة العشوائية (seed)</label>
+    <input type="number" id="paramSeed" value="42" step="1">
+    <button id="btnNew" style="width:100%;margin-top:12px">توليد رسم جديد (seed + 1)</button>
+  </div>
+
+  <div class="card">
+    <h2>2. QAOA والعتاد</h2>
+    <label>عدد الطبقات p: <b id="valP">2</b></label>
+    <input type="range" id="paramP" min="1" max="5" value="2">
+    <label>خطأ بوابة CNOT: <b id="valGate">0.8%</b></label>
+    <input type="range" id="paramGate" min="0.001" max="0.03" step="0.001" value="0.008">
+    <label>زمن T1 (µs): <b id="valT1">100</b></label>
+    <input type="range" id="paramT1" min="20" max="300" step="10" value="100">
+    <div class="g2">
+      <div><label>زمن CNOT (ns)</label><input type="number" id="paramTcx" value="100" step="10"></div>
+      <div><label>قراءة + تهيئة (µs)</label><input type="number" id="paramReset" value="200" step="10"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. افتراضات التكلفة</h2>
+    <div class="g2">
+      <div><label>تبريد (kW)</label><input type="number" id="paramCryo" value="14.5" step="0.5"></div>
+      <div><label>كهرباء ($/kWh)</label><input type="number" id="paramEnergy" value="0.18" step="0.01"></div>
+      <div><label>خادم سحابي ($/h)</label><input type="number" id="paramCloud" value="3.5" step="0.1"></div>
+      <div><label>سعر اللقطة ($)</label><input type="number" id="paramShot" value="0.0008" step="0.0001"></div>
+      <div><label>لقطات لكل تقييم</label><input type="number" id="paramShots" value="1000" step="100"></div>
+      <div><label>تأخير حلقة المحسّن (ms)</label><input type="number" id="paramLoop" value="50" step="10"></div>
+    </div>
+    <button class="main" id="btnRun">تشغيل المقارنة</button>
+    <button id="btnExport" style="width:100%;margin-top:8px">تصدير النتائج (JSON)</button>
+  </div>
+</div>
+
+<div style="min-width:0">
+  <div class="card">
+    <div style="font-size:.72rem;color:var(--muted)">النتيجة المحسوبة لهذه الإعدادات</div>
+    <div id="vTitle" style="font-size:1.35rem;font-weight:900;margin-top:2px">جارٍ الحساب…</div>
+    <p id="vDesc" style="font-size:.85rem;margin:8px 0 0"></p>
+    <div class="kpis">
+      <div class="kpi"><span>QAOA المثالية (بلا ضوضاء)</span><strong id="kIdeal" class="mono" style="color:var(--cy)">--</strong></div>
+      <div class="kpi"><span>QAOA مع الضوضاء</span><strong id="kNoisy" class="mono" style="color:var(--pu)">--</strong></div>
+      <div class="kpi"><span>SA الكلاسيكي (متوسط التشغيلات)</span><strong id="kSA" class="mono" style="color:var(--gr)">--</strong></div>
+      <div class="kpi"><span>تكلفة QAOA (حلقة التحسين)</span><strong id="kQC" class="mono">--</strong></div>
+      <div class="kpi"><span>تكلفة SA (تشغيل واحد)</span><strong id="kCC" class="mono">--</strong></div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h2 style="color:var(--pu)">الجانب الكمومي (محاكى)</h2>
+      <div class="row"><span>عمق الدائرة (طبقات)</span><span id="qDepth" class="mono">--</span></div>
+      <div class="row"><span>عدد بوابات CNOT</span><span id="qCx" class="mono">--</span></div>
+      <div class="row"><span>مدة الدائرة</span><span id="qDur" class="mono">--</span></div>
+      <div class="row"><span>الإخلاص الكلي F</span><span id="qF" class="mono">--</span></div>
+      <div class="row"><span>تقييمات المحسّن / اللقطات</span><span id="qEv" class="mono">--</span></div>
+      <div class="row"><span>زمن الجدار / الطاقة</span><span id="qWall" class="mono">--</span></div>
+      <div class="row"><span>γ</span><span id="qG" class="mono">--</span></div>
+      <div class="row"><span>β</span><span id="qB" class="mono">--</span></div>
+      <p class="note">العمق يُحسب بتلوين جشع للحواف (توازي بوابات ZZ) مع اتصال كامل بين الكيوبتات، أي بلا كلفة SWAP؛ العتاد الحقيقي أسوأ.</p>
+    </div>
+    <div class="card">
+      <h2 style="color:var(--gr)">الجانب الكلاسيكي</h2>
+      <div class="row"><span>الخوارزمية</span><span>SA × 10 تشغيلات</span></div>
+      <div class="row"><span>متوسط ± انحراف</span><span id="cMean" class="mono">--</span></div>
+      <div class="row"><span>أفضل تشغيل</span><span id="cBest" class="mono">--</span></div>
+      <div class="row"><span>زمن تشغيل واحد</span><span id="cTime" class="mono">--</span></div>
+      <div class="row"><span>زمن الحل الدقيق (قوة غاشمة)</span><span id="cExact" class="mono">--</span></div>
+      <div class="row"><span>القطع الأمثل</span><span id="cOpt" class="mono">--</span></div>
+      <p class="note">عند هذا الحجم الحل الدقيق نفسه يستغرق أجزاء من الميلي ثانية، وهذا هو السياق الحقيقي لأي مقارنة.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>نسبة التقريب مقابل عمق الدائرة p</h2>
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+    <p class="note">QAOA المثالية = القيمة المتوقعة بعد تحسين 2p بارامتراً مستقلاً (Nelder–Mead مع بدء دافئ من p−1). الضوضاء: E = F·E_ideal + (1−F)·|E|/2 (نموذج depolarizing شامل).</p>
+  </div>
+
+  <div class="card">
+    <h2>عيّنة الرسم</h2>
+    <div class="canvasbox" id="gbox"><canvas id="gcanvas"></canvas></div>
+    <div id="gInfo" class="note mono"></div>
+  </div>
+</div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function mulberry(seed){let a=seed>>>0;return()=>{a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296}}
+
+/* ---------- Graph ---------- */
+function makeGraph(type,n,prob,rnd){
+  const edges=[];let note='';
+  if(type==='erdos'){for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(rnd()<prob)edges.push([i,j])}
+  else if(type==='ring'){for(let i=0;i<n;i++){const j=(i+1)%n;if(n>2&&!(n===2))edges.push([Math.min(i,j),Math.max(i,j)])}}
+  else if(type==='complete'){for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)edges.push([i,j])}
+  else if(type==='3regular'){
+    let ok=false;
+    if(n%2===0&&n>=4){
+      for(let t=0;t<2000&&!ok;t++){
+        const st=[];for(let i=0;i<n;i++)st.push(i,i,i);
+        for(let i=st.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[st[i],st[j]]=[st[j],st[i]]}
+        const seen=new Set(),E=[];let good=true;
+        for(let k=0;k<st.length;k+=2){const u=Math.min(st[k],st[k+1]),v=Math.max(st[k],st[k+1]);
+          if(u===v||seen.has(u*64+v)){good=false;break}seen.add(u*64+v);E.push([u,v])}
+        if(good){edges.push(...E);ok=true}
+      }
+    }
+    if(!ok){note=' (N فردي أو فشل التوليد: استُخدم رسم دائري دوّار تقريبي)';
+      const seen=new Set();for(let i=0;i<n;i++)for(let k=1;k<=2;k++){const j=(i+k)%n,u=Math.min(i,j),v=Math.max(i,j);if(u!==v&&!seen.has(u*64+v)){seen.add(u*64+v);edges.push([u,v])}}}
+  }
+  if(!edges.length&&n>1)edges.push([0,1]);
+  return {n,edges,note};
+}
+function buildCut(g){
+  const d=1<<g.n,c=new Float64Array(d);
+  for(let s=0;s<d;s++){let v=0;for(const [u,w] of g.edges)if(((s>>u)^(s>>w))&1)v++;c[s]=v}
+  return c;
+}
+function edgeColors(g){
+  const used=Array.from({length:g.n},()=>new Set());let mx=0;
+  for(const [u,v] of g.edges){let c=0;while(used[u].has(c)||used[v].has(c))c++;used[u].add(c);used[v].add(c);mx=Math.max(mx,c+1)}
+  return mx;
+}
+
+/* ---------- QAOA statevector (typed arrays, cached cut values) ---------- */
+class QAOA{
+  constructor(g,cut){this.N=g.n;this.dim=1<<g.n;this.cut=cut;this.re=new Float64Array(this.dim);this.im=new Float64Array(this.dim);this.evals=0}
+  expectation(gam,bet){
+    this.evals++;
+    const {re,im,dim,N,cut}=this;
+    re.fill(1/Math.sqrt(dim));im.fill(0);
+    for(let l=0;l<gam.length;l++){
+      for(let s=0;s<dim;s++){const ph=-gam[l]*cut[s],c=Math.cos(ph),sn=Math.sin(ph),r=re[s],i=im[s];re[s]=r*c-i*sn;im[s]=r*sn+i*c}
+      const c=Math.cos(bet[l]),sn=Math.sin(bet[l]); // exp(-i b X) = c I - i sn X
+      for(let q=0;q<N;q++){const m=1<<q;
+        for(let s=0;s<dim;s++){if(s&m)continue;const t=s|m,ar=re[s],ai=im[s],br=re[t],bi=im[t];
+          re[s]=c*ar+sn*bi;im[s]=c*ai-sn*br;re[t]=c*br+sn*ai;im[t]=c*bi-sn*ar}}
+    }
+    let e=0;for(let s=0;s<dim;s++)e+=(re[s]*re[s]+im[s]*im[s])*cut[s];
+    return e;
+  }
+}
+function nelderMead(f,x0,iters,step){
+  const n=x0.length;let S=[x0.slice()];
+  for(let i=0;i<n;i++){const x=x0.slice();x[i]+=step;S.push(x)}
+  let F=S.map(f);
+  for(let it=0;it<iters;it++){
+    const idx=[...F.keys()].sort((a,b)=>F[a]-F[b]);S=idx.map(i=>S[i]);F=idx.map(i=>F[i]);
+    const c=new Array(n).fill(0);
+    for(let i=0;i<n;i++)for(let j=0;j<n;j++)c[j]+=S[i][j]/n;
+    const pt=t=>c.map((v,j)=>v+t*(S[n][j]-v));
+    const xr=pt(-1),fr=f(xr);
+    if(fr<F[0]){const xe=pt(-2),fe=f(xe);if(fe<fr){S[n]=xe;F[n]=fe}else{S[n]=xr;F[n]=fr}}
+    else if(fr<F[n-1]){S[n]=xr;F[n]=fr}
+    else{const xc=pt(fr<F[n]?-0.5:0.5),fc=f(xc);
+      if(fc<Math.min(fr,F[n])){S[n]=xc;F[n]=fc}
+      else{for(let i=1;i<=n;i++){S[i]=S[0].map((v,j)=>v+0.5*(S[i][j]-v));F[i]=f(S[i])}}}
+  }
+  let b=0;for(let i=1;i<=n;i++)if(F[i]<F[b])b=i;
+  return {x:S[b],f:F[b]};
+}
+function optimizeAll(qaoa,pMax,rnd){
+  const res=[];let prev=null;
+  for(let p=1;p<=pMax;p++){
+    qaoa.evals=0;
+    const f=x=>-qaoa.expectation(x.slice(0,p),x.slice(p));
+    const starts=[];
+    if(prev)starts.push([...prev.g,prev.g[p-2],...prev.b,prev.b[p-2]]);
+    const nRand=prev?2:6;
+    for(let k=0;k<nRand;k++)starts.push([...Array.from({length:p},()=>rnd()*1.5),...Array.from({length:p},()=>rnd()*0.8)]);
+    let best=null;
+    for(const x0 of starts){const r=nelderMead(f,x0,100+40*p,0.2);if(!best||r.f<best.f)best=r}
+    prev={g:best.x.slice(0,p),b:best.x.slice(p)};
+    res.push({p,E:-best.f,g:prev.g,b:prev.b,evals:qaoa.evals});
+  }
+  return res;
+}
+
+/* ---------- Classical SA ---------- */
+function runSA(n,cut,rnd,steps=10000){
+  const t0=performance.now();
+  let s=Math.floor(rnd()*(1<<n)),e=cut[s],best=e,T=2;const cool=Math.pow(0.01/2,1/steps);
+  for(let i=0;i<steps;i++){
+    const nb=s^(1<<Math.floor(rnd()*n)),ne=cut[nb],d=ne-e;
+    if(d>=0||Math.exp(d/T)>rnd()){s=nb;e=ne;if(e>best)best=e}
+    T*=cool;
+  }
+  return {best,ms:performance.now()-t0};
+}
+
+/* ---------- App ---------- */
+let graph=null,graphSig='',last=null,chart=null;
+const num=id=>parseFloat($(id).value);
+function labels(){
+  $('valN').textContent=$('paramN').value;$('valProb').textContent=$('paramProb').value;
+  $('valP').textContent=$('paramP').value;$('valGate').textContent=(num('paramGate')*100).toFixed(1)+'%';
+  $('valT1').textContent=$('paramT1').value;
+}
+function noisy(E,F,W){return F*E+(1-F)*W/2}
+function hw(p,colors,cx,gate,t1,tcx){
+  const depth=p*(3*colors+1),cnots=cx*2*p;
+  const durUs=p*(colors*(2*tcx+25)+25)/1000;
+  const F=Math.exp(-durUs/t1)*Math.pow(1-gate,cnots);
+  return {depth,cnots,durUs,F};
+}
+const fmt$=v=>'$'+(v>=1?v.toFixed(2):v>=0.01?v.toFixed(4):v.toExponential(2));
+
+function compute(forceNew){
+  const n=parseInt($('paramN').value),prob=num('paramProb'),type=$('graphType').value,p=parseInt($('paramP').value);
+  const seed=parseInt($('paramSeed').value)||0;
+  const sig=[n,type,prob,seed].join('|');
+  if(forceNew||sig!==graphSig||!graph){graph=makeGraph(type,n,prob,mulberry(seed));graphSig=sig}
+  const g=graph;
+  const t0=performance.now();const cut=buildCut(g);let opt=0;for(let s=0;s<cut.length;s++)if(cut[s]>opt)opt=cut[s];
+  const exactMs=performance.now()-t0;
+  const rnd=mulberry(seed+1000);
+  const W=g.edges.length,colors=edgeColors(g);
+  const gate=num('paramGate'),t1=num('paramT1'),tcx=num('paramTcx');
+
+  // classical
+  const runs=[];for(let i=0;i<10;i++)runs.push(runSA(n,cut,rnd));
+  const ratios=runs.map(r=>r.best/opt*100);
+  const mean=ratios.reduce((a,b)=>a+b,0)/ratios.length;
+  const sd=Math.sqrt(ratios.reduce((a,b)=>a+(b-mean)**2,0)/ratios.length);
+  const bestRun=Math.max(...ratios);
+  const saMs=runs.reduce((a,r)=>a+r.ms,0)/runs.length;
+  const cEnergy=0.35*(saMs/1000)/3600;
+  const cCost=(saMs/1000/3600)*num('paramCloud')+cEnergy*num('paramEnergy');
+
+  // quantum
+  const q=new QAOA(g,cut);
+  const all=optimizeAll(q,5,rnd);
+  const sel=all[p-1];
+  const h=hw(p,colors,W,gate,t1,tcx);
+  const idealRatio=sel.E/opt*100;
+  const noisyRatio=noisy(sel.E,h.F,W)/opt*100;
+  const shots=sel.evals*num('paramShots');
+  const wallS=shots*(h.durUs+num('paramReset'))/1e6+sel.evals*num('paramLoop')/1000;
+  const kwh=num('paramCryo')*wallS/3600;
+  const qCost=kwh*num('paramEnergy')+shots*num('paramShot');
+
+  // UI
+  $('kIdeal').textContent=idealRatio.toFixed(1)+'%';
+  $('kNoisy').textContent=noisyRatio.toFixed(1)+'%';
+  $('kSA').textContent=mean.toFixed(1)+'%';
+  $('kQC').textContent=fmt$(qCost);$('kCC').textContent=fmt$(cCost);
+  $('qDepth').textContent=h.depth;$('qCx').textContent=h.cnots;
+  $('qDur').textContent=h.durUs.toFixed(2)+' µs';$('qF').textContent=(h.F*100).toFixed(1)+'%';
+  $('qEv').textContent=sel.evals.toLocaleString()+' / '+shots.toLocaleString();
+  $('qWall').textContent=wallS.toFixed(1)+' s / '+kwh.toFixed(4)+' kWh';
+  $('qG').textContent='['+sel.g.map(x=>x.toFixed(2)).join(', ')+']';
+  $('qB').textContent='['+sel.b.map(x=>x.toFixed(2)).join(', ')+']';
+  $('cMean').textContent=mean.toFixed(1)+'% ± '+sd.toFixed(1);
+  $('cBest').textContent=bestRun.toFixed(1)+'%';
+  $('cTime').textContent=saMs.toFixed(2)+' ms';
+  $('cExact').textContent=exactMs.toFixed(2)+' ms';
+  $('cOpt').textContent=opt+' / '+W+' حافة';
+
+  // verdict (computed from the numbers only)
+  const dAcc=mean-noisyRatio,costX=qCost/Math.max(cCost,1e-12);
+  let title,color;
+  if(dAcc>=0&&cCost<=qCost){title='الكلاسيكي أدق وأرخص في هذه الإعدادات';color='var(--gr)'}
+  else if(dAcc<0&&qCost<cCost){title='QAOA أدق وأرخص في هذه الإعدادات';color='var(--cy)'}
+  else if(dAcc<0){title='QAOA أدق لكن أغلى';color='var(--am)'}
+  else{title='الكلاسيكي أدق وأغلى';color='var(--am)'}
+  $('vTitle').textContent=title;$('vTitle').style.color=color;
+  $('vDesc').textContent=`عند N=${n} وp=${p}: فرق الدقة (كلاسيكي − QAOA بضوضاء) = ${dAcc.toFixed(1)} نقطة مئوية، وتكلفة QAOA ≈ ${costX>=1?costX.toFixed(0)+'×':'1/'+(1/costX).toFixed(0)} تكلفة تشغيل SA واحد. تذكّر أن النتيجة تعتمد كلياً على الافتراضات المُدخلة ولا تعمّم على أحجام أكبر.`;
+
+  // chart
+  const ideal=[],real=[];
+  for(const r of all){const hh=hw(r.p,colors,W,gate,t1,tcx);ideal.push(+(r.E/opt*100).toFixed(1));real.push(+(noisy(r.E,hh.F,W)/opt*100).toFixed(1))}
+  chart.data.datasets[0].data=ideal;chart.data.datasets[1].data=real;chart.data.datasets[2].data=ideal.map(()=>+mean.toFixed(1));
+  const tick=css('--muted');
+  chart.options.scales.x.ticks.color=tick;chart.options.scales.y.ticks.color=tick;chart.options.plugins.legend.labels.color=tick;
+  chart.update();
+  drawGraph();
+  $('gInfo').textContent=`N=${n} | الحواف=${W} | ألوان الحواف=${colors}${g.note}`;
+
+  last={n,type,seed,p,edges:W,optimalCut:opt,
+    qaoaIdealRatioPct:idealRatio,qaoaNoisyRatioPct:noisyRatio,saMeanRatioPct:mean,saStdPct:sd,
+    fidelity:h.F,cnots:h.cnots,depth:h.depth,optimizerEvals:sel.evals,shots,
+    quantumCostUsd:qCost,quantumWallSec:wallS,quantumKwh:kwh,saRuntimeMs:saMs,saCostUsd:cCost,exactMs,
+    gamma:sel.g,beta:sel.b,timestamp:new Date().toISOString()};
+}
+function drawGraph(){
+  if(!graph)return;
+  const box=$('gbox'),cv=$('gcanvas'),dpr=window.devicePixelRatio||1;
+  const w=box.clientWidth,h=box.clientHeight;cv.width=w*dpr;cv.height=h*dpr;cv.style.width=w+'px';cv.style.height=h+'px';
+  const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const n=graph.n,cx=w/2,cy=h/2,r=Math.min(cx,cy)-24;
+  const pts=Array.from({length:n},(_,i)=>({x:cx+r*Math.cos(2*Math.PI*i/n),y:cy+r*Math.sin(2*Math.PI*i/n)}));
+  ctx.strokeStyle=css('--line');ctx.lineWidth=1.3;
+  for(const [u,v] of graph.edges){ctx.beginPath();ctx.moveTo(pts[u].x,pts[u].y);ctx.lineTo(pts[v].x,pts[v].y);ctx.stroke()}
+  ctx.font='10px "Fira Code",monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  pts.forEach((pt,i)=>{ctx.beginPath();ctx.arc(pt.x,pt.y,12,0,6.2832);ctx.fillStyle=css('--card');ctx.fill();ctx.strokeStyle=css('--cy');ctx.lineWidth=1.8;ctx.stroke();ctx.fillStyle=css('--text');ctx.fillText('Q'+i,pt.x,pt.y)});
+}
+function run(forceNew){
+  const b=$('btnRun');b.disabled=true;b.textContent='جارٍ الحساب…';$('vTitle').textContent='جارٍ الحساب…';
+  setTimeout(()=>{try{compute(forceNew)}finally{b.disabled=false;b.textContent='تشغيل المقارنة'}},30);
+}
+window.addEventListener('load',()=>{
+  chart=new Chart($('chart'),{type:'line',data:{labels:['p=1','p=2','p=3','p=4','p=5'],datasets:[
+    {label:'QAOA مثالية',data:[],borderColor:'#06b6d4',backgroundColor:'rgba(6,182,212,.1)',fill:true,tension:.3},
+    {label:'QAOA مع ضوضاء',data:[],borderColor:'#a855f7',borderDash:[5,5],tension:.3},
+    {label:'SA (متوسط)',data:[],borderColor:'#10b981',pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8'}}},
+      scales:{y:{min:40,max:100,title:{display:true,text:'نسبة التقريب %'},grid:{color:'rgba(128,128,128,.2)'},ticks:{color:'#94a3b8'}},
+              x:{grid:{color:'rgba(128,128,128,.2)'},ticks:{color:'#94a3b8'}}}}});
+  ['paramN','paramProb','paramP','paramGate','paramT1'].forEach(id=>$(id).addEventListener('input',labels));
+  $('btnRun').addEventListener('click',()=>run(false));
+  $('btnNew').addEventListener('click',()=>{$('paramSeed').value=(parseInt($('paramSeed').value)||0)+1;run(true)});
+  $('btnExport').addEventListener('click',()=>{
+    if(!last)return;
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(last,null,2)],{type:'application/json'}));a.download='qaoa_benchmark.json';a.click();
+  });
+  window.addEventListener('resize',drawGraph);
+  labels();run(false);
+});
+</script>
+</body>
+</html>
